@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<head>
+    <title>Drone Test</title>
+    <script src='https://cdn.scaledrone.com/scaledrone-lite.min.js'></script>
+    <style>
+        html, body {
+            font-family: "HelveticaNeue",Bahnschrift,"Segoe UI",Ubuntu,sans-serif;
+            display: table;
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            background: #222;
+        }
+
+        body > div {
+            display: table-row;
+        }
+        body > div.raised {
+            animation-name: pulse;
+            animation-duration: 1500ms;
+            animation-iteration-count: infinite;
+            animation-timing-function: linear;
+        }
+        body > div:before {
+            content: attr(data-name);
+            vertical-align: middle;
+            display: table-cell;
+            text-align: center;
+            color: #ddd;
+            font-size: 12vw;
+        }
+        @keyframes pulse {
+            0% { background-color: inherit; }
+            50% { background-color: #b00; }
+            100% { background-color: inherit; }
+        }
+    </style>
+</head>
+<body>
+<script>
+    'use strict'
+
+    function makeHash(hashLength) {
+        let res = ''
+        hashLength = hashLength || 42
+        do {
+            res += (Math.random() * 127965545402204160 + 3656158440062976).toString(36)
+        } while (res.length < hashLength)
+
+        return res.substr(0, hashLength)
+    }
+
+    function send(event, data) {
+        drone.publish({
+            room: roomName,
+            message: JSON.stringify({
+                event: event,
+                data: data
+            })
+        })
+    }
+
+    function redraw() {
+        let body = document.body
+        while (body.firstChild) {
+            body.removeChild(body.firstChild)
+        }
+        for (let id in users) {
+            if (!users.hasOwnProperty(id)) continue
+            let el = document.createElement('div')
+
+            el.id = id
+            el.dataset['name'] = users[id].name
+            el.classList.toggle('raised', users[id].raised || false)
+
+            body.appendChild(el)
+        }
+    }
+
+    function changeState(user) {
+        users[user.user] = user
+        document.getElementById(user.user).classList.toggle('raised', user.raised || false)
+    }
+
+    function addUser(user) {
+        users[user.user] = user
+        redraw()
+    }
+
+    // Init
+    const drone = new ScaleDrone('Bbfjs5Y4HHDACLPt');
+    const EVT_JOIN = 'join';
+    const EVT_HELLO = 'hello';
+    const EVT_CHNG = 'chng';
+
+    let users = {}
+    let me = {
+        user: null,
+        name: '',
+        raised: false
+    }
+
+    // manage channel
+    let roomName = localStorage.getItem('lastroom') || makeHash()
+    if (43 === location.hash.length) {
+        roomName = location.hash.substr(1)
+    } else {
+        location.hash = roomName
+    }
+    localStorage.setItem('lastroom', roomName)
+    console.log('ROOM', roomName)
+
+    // manage username
+    me.name = localStorage.getItem('username') || ''
+    me.user = localStorage.getItem('userid') || makeHash(23)
+    me.name = prompt('Username', me.name) || ('User#' + ~~(Math.random() * 900 + 100))
+    localStorage.setItem('username', me.name)
+    localStorage.setItem('userid', me.user)
+
+    addUser(me)
+
+    const room = drone.subscribe(roomName)
+    room.on('data', data => {
+        try {
+            data = JSON.parse(data)
+            let ev = data.event
+            data = data.data
+            if (data.user === me.user) return
+            switch (ev) {
+                case EVT_JOIN:
+                    addUser(data)
+                    send(EVT_HELLO, me)
+                    break
+                case EVT_HELLO:
+                    addUser(data)
+                    break
+                case EVT_CHNG:
+                    changeState(data)
+                    break
+
+            }
+        } catch (ignored) {
+        }
+    })
+    room.on('open', error => {
+        if (error) {
+            return console.error(error);
+        }
+        send(EVT_JOIN, me)
+    });
+
+    document.body.addEventListener('click', () => {
+        me.raised ^= true
+        changeState(me)
+        send(EVT_CHNG, me)
+    })
+</script>
+</body>
